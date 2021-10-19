@@ -72,7 +72,7 @@ class ResultsParser {
   }
 
   static convertTestCase(suite, testCase) {
-    const { _attributes, failure } = testCase;
+    const { _attributes, failure,  output } = testCase;
     const { name, fullname, result, duration } = _attributes;
     const testMeta = new TestMeta(suite, name);
     testMeta.result = result;
@@ -95,6 +95,14 @@ class ResultsParser {
       core.warning(`Not able to find annotation point for failed test! Test trace: ${trace}`);
       return testMeta;
     }
+    
+    const raw_details = [ trace ];
+    
+    if (output && output._cdata) {
+       raw_details.unshift(output._cdata);
+    } else {
+      core.debug(`No console output for test case: ${fullname}`);
+    }
 
     testMeta.annotation = {
       path: point.path,
@@ -103,7 +111,7 @@ class ResultsParser {
       annotation_level: 'failure',
       title: fullname,
       message: failure.message._cdata ? failure.message._cdata : 'Test Failed!',
-      raw_details: trace,
+      raw_details: raw_details.join("\n"),
     };
     core.info(
       `- ${testMeta.annotation.path}:${testMeta.annotation.start_line} - ${testMeta.annotation.title}`,
