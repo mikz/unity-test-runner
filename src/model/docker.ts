@@ -1,8 +1,21 @@
 import { existsSync, mkdirSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { exec } from '@actions/exec';
 import path from 'path';
 
 const Docker = {
+  async cleanup(parameters) {
+    const {
+      runnerTemporaryPath,
+    } = parameters;
+
+    const container_id = path.join(runnerTemporaryPath, 'container_id');
+
+    const container = await readFile(container_id);
+
+    await exec(`docker rm --force --volumes "${container}"`, undefined, { silent: true });
+  },
+
   async run(image, parameters, silent = false) {
     let runCommand = '';
     switch (process.platform) {
@@ -15,7 +28,22 @@ const Docker = {
       default:
         throw new Error(`Operation system, ${process.platform}, is not supported yet.`);
     }
-    await exec(runCommand, undefined, { silent });
+
+    process.on('exit', () => {
+        console.log("Calling process.exit handler");
+        Docker.cleanup(parameters);
+      });
+
+    try {
+      await exec(runCommand, undefined, { silent });
+      console.log("FINISHED COMMAND");
+    } catch (e) {
+      console.error("ERROR: ", e);
+      throw e;
+    } finally {
+      console.log("FINALLY.")
+      await Docker.cleanup(parameters);
+    }
   },
 
   getLinuxCommand(image, parameters): string {
@@ -40,12 +68,14 @@ const Docker = {
     if (!existsSync(githubHome)) mkdirSync(githubHome);
     const githubWorkflow = path.join(runnerTemporaryPath, '_github_workflow');
     if (!existsSync(githubWorkflow)) mkdirSync(githubWorkflow);
+    const container_id = path.join(runnerTemporaryPath, 'container_id');
     const testPlatforms = (
       testMode === 'all' ? ['playmode', 'editmode', 'COMBINE_RESULTS'] : [testMode]
     ).join(';');
 
     return `docker run \
                 --workdir /github/workspace \
+                --cidfile "${container_id}" \
                 --rm \
                 --env UNITY_LICENSE \
                 --env UNITY_LICENSE_FILE \
@@ -112,6 +142,7 @@ const Docker = {
 
     const githubHome = path.join(runnerTemporaryPath, '_github_home');
     if (!existsSync(githubHome)) mkdirSync(githubHome);
+    const container_id = path.join(runnerTemporaryPath, 'container_id');
     const githubWorkflow = path.join(runnerTemporaryPath, '_github_workflow');
     if (!existsSync(githubWorkflow)) mkdirSync(githubWorkflow);
     const testPlatforms = (
@@ -120,6 +151,7 @@ const Docker = {
 
     return `docker run \
                 --workdir /github/workspace \
+                --cidfile "${container_id}" \
                 --rm \
                 --env UNITY_LICENSE \
                 --env UNITY_LICENSE_FILE \
